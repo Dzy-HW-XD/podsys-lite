@@ -108,10 +108,9 @@ fi
 IMAGE_NAME="ainexus-lite"
 IMAGE_TAG="v2.0"
 
-if docker ps -a --format '{{.Image}}' | grep -q "${IMAGE_NAME}:${IMAGE_TAG}"; then
-    docker stop $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
-    docker rm $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
-    docker rmi ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null 2>&1 || true
+if docker ps -a --format '{{.Names}}' | grep -q podsys-lite; then
+    docker stop podsys-lite >/dev/null 2>&1 || true
+    docker rm podsys-lite >/dev/null 2>&1 || true
 fi
 
 # 检测架构并导入镜像
