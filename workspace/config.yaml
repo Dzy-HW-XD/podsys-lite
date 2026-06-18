@@ -26,3 +26,7 @@ iso: ubuntu-24.04.4-live-server-arm64.iso
 # ========== LiveOS 配置 ==========
 # 是否启用 LiveOS 模式: yes / no
 liveos_enable: yes
+
+# LiveOS ISO 文件名（放在 workspace/iso/ 目录下）
+# 由 scripts/build_liveos_iso.sh 从黄金机 squashfs 构建生成
+liveos_iso: liveos.iso

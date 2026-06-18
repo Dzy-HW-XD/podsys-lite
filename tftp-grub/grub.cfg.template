@@ -2,7 +2,7 @@ set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /liveos-vmlinuz boot=casper url=http://MANAGER_IP:5001/iso/LIVEOS_ISO root=/dev/ram0 ramdisk_size=1500000 ip=dhcp console=tty0 net.ifnames=0 biosdevname=0 cloud-config-url=/dev/null ---
+    linux /liveos-vmlinuz boot=casper url=http://MANAGER_IP:5001/iso/LIVEOS_ISO root=/dev/ram0 ramdisk_size=33554432 ip=dhcp console=tty0 net.ifnames=0 biosdevname=0 cloud-config-url=/dev/null ---
     initrd /liveos-initrd
 }
 

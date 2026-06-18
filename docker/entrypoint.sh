@@ -46,18 +46,24 @@ if [ -n "$MANAGER_NIC" ]; then
 fi
 
 # 检查 LiveOS 文件
-LIVEOS_DIR="/workspace/liveos"
+LIVEOS_ISO_DIR="/workspace/iso"
+LIVEOS_SQUASHFS_DIR="/workspace/liveos"
 if [ "$LIVEOS_ENABLE" = "yes" ] || [ "$LIVEOS_ENABLE" = "true" ]; then
     echo "[LiveOS] Checking LiveOS files..."
-    MISSING=""
-    [ -f "$LIVEOS_DIR/vmlinuz" ] || MISSING="$MISSING vmlinuz"
-    [ -f "$LIVEOS_DIR/initrd" ] || MISSING="$MISSING initrd"
-    [ -f "$LIVEOS_DIR/filesystem.squashfs" ] || MISSING="$MISSING filesystem.squashfs"
-    if [ -n "$MISSING" ]; then
-        echo "[LiveOS] WARNING: Missing files:${MISSING}"
-        echo "[LiveOS] Place them in workspace/liveos/ on the host"
+    # 检查 LiveOS ISO（由 build_liveos_iso.sh 从黄金机 squashfs 构建）
+    LIVEOS_ISO=$(grep "liveos_iso" "$CONFIG_FILE" 2>/dev/null | cut -d ":" -f 2 | tr -d '[:space:]')
+    LIVEOS_ISO=${LIVEOS_ISO:-liveos.iso}
+    if [ -f "$LIVEOS_ISO_DIR/$LIVEOS_ISO" ]; then
+        echo "[LiveOS] ISO present: $LIVEOS_ISO ($(du -h "$LIVEOS_ISO_DIR/$LIVEOS_ISO" | cut -f1))"
     else
-        echo "[LiveOS] All files present, LiveOS mode ready"
+        echo "[LiveOS] WARNING: LiveOS ISO not found: $LIVEOS_ISO_DIR/$LIVEOS_ISO"
+        echo "[LiveOS] Build it with: bash scripts/build_liveos_iso.sh"
+    fi
+    # 检查 squashfs 源文件（仅提示）
+    if [ -f "$LIVEOS_SQUASHFS_DIR/filesystem.squashfs" ]; then
+        echo "[LiveOS] Squashfs source present ($(du -h "$LIVEOS_SQUASHFS_DIR/filesystem.squashfs" | cut -f1))"
+    else
+        echo "[LiveOS] WARNING: No squashfs in $LIVEOS_SQUASHFS_DIR/ (run prepare_liveos.sh on golden machine)"
     fi
 fi
 

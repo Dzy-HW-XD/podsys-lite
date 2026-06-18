@@ -85,13 +85,16 @@ echo "[4/4] Generating ISO..."
 case "$ISO_TOOL" in
     xorriso)
         xorriso -as mkisofs \
+            -iso-level 3 \
             -r \
             -V "PODSYS_LIVEOS" \
             -o "$OUTPUT_ISO" \
             "$ISO_DIR"
         ;;
     genisoimage|mkisofs)
+        # -iso-level 3 支持 >4G 文件
         $ISO_TOOL \
+            -iso-level 3 \
             -r \
             -V "PODSYS_LIVEOS" \
             -o "$OUTPUT_ISO" \

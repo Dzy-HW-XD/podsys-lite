@@ -73,24 +73,23 @@ if [ -f "$CONFIG_FILE" ]; then
 
     # ---- LiveOS 检查 ----
     liveos_enable=$(grep "liveos_enable" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+    liveos_iso=$(grep "liveos_iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
     if [ "$liveos_enable" = "yes" ] || [ "$liveos_enable" = "true" ]; then
         echo ""
         echo "=== LiveOS Mode Enabled ==="
-        LIVEOS_DIR="workspace/liveos"
-        MISSING=""
-        [ -f "$LIVEOS_DIR/vmlinuz" ] || MISSING="$MISSING  vmlinuz"
-        [ -f "$LIVEOS_DIR/initrd" ] || MISSING="$MISSING  initrd"
-        [ -f "$LIVEOS_DIR/filesystem.squashfs" ] || MISSING="$MISSING  filesystem.squashfs"
-        if [ -n "$MISSING" ]; then
-            echo "[WARNING] LiveOS files missing:"
-            echo "$MISSING"
-            echo "  Place them in ${LIVEOS_DIR}/"
-            echo "  See scripts/prepare_liveos.sh for instructions"
+        # 检查 LiveOS ISO（包含黄金机 squashfs 的自定义 ISO）
+        LIVEOS_ISO_PATH="workspace/iso/${liveos_iso:-liveos.iso}"
+        if [ -f "$LIVEOS_ISO_PATH" ]; then
+            echo "[OK] LiveOS ISO: ${LIVEOS_ISO_PATH} ($(du -h "$LIVEOS_ISO_PATH" | cut -f1))"
         else
-            echo "[OK] vmlinuz"
-            echo "[OK] initrd"
-            echo "[OK] filesystem.squashfs ($(du -h ${LIVEOS_DIR}/filesystem.squashfs | cut -f1))"
-            echo "LiveOS ready."
+            echo "[WARNING] LiveOS ISO not found: ${LIVEOS_ISO_PATH}"
+            echo "  Build it with: bash scripts/build_liveos_iso.sh"
+            echo "  Then place it in workspace/iso/"
+        fi
+        # 同时检查 squashfs 源文件（用于提示构建）
+        if [ ! -f "workspace/liveos/filesystem.squashfs" ]; then
+            echo "[WARNING] workspace/liveos/filesystem.squashfs not found"
+            echo "  Run scripts/prepare_liveos.sh on the golden machine first"
         fi
         echo "==========================="
     else
@@ -167,13 +166,15 @@ AUTOEOF
 
 # 生成 GRUB 配置（ARM64 GB300 用 GRUB 引导替代崩溃的 iPXE）
 mkdir -p "$TFTP_ROOT/boot/grub"
-ISO_NAME=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+ISO_NAME=$(grep "iso" "$CONFIG_FILE" | grep -v "liveos_iso" | cut -d ":" -f 2 | tr -d '[:space:]')
+LIVEOS_ISO=$(grep "liveos_iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+LIVEOS_ISO=${LIVEOS_ISO:-liveos.iso}
 GRUB_CFG_CONTENT=$(cat <<GRUBEOF
 set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /liveos-vmlinuz boot=casper netboot=url live-media-url=http://${manager_ip}:5001/liveos/ ip=dhcp console=tty0 net.ifnames=0 biosdevname=0
+    linux /liveos-vmlinuz boot=casper url=http://${manager_ip}:5001/iso/${LIVEOS_ISO} root=/dev/ram0 ramdisk_size=33554432 ip=dhcp console=tty0 net.ifnames=0 biosdevname=0 cloud-config-url=/dev/null ---
     initrd /liveos-initrd
 }
 
