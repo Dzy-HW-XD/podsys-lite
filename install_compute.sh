@@ -156,7 +156,8 @@ fi
 
 # ---- TFTP 根目录初始化 ----
 TFTP_ROOT="$PWD/tftp-root"
-mkdir -p "$TFTP_ROOT/casper"
+mkdir -p "$TFTP_ROOT/casper" "$TFTP_ROOT/boot/grub" "$TFTP_ROOT/ipxe"
+chmod -R 755 "$TFTP_ROOT"
 
 # 生成 autoexec.ipxe（iPXE 加载后的默认入口）
 cat > "$TFTP_ROOT/autoexec.ipxe" <<AUTOEOF
@@ -193,8 +194,8 @@ echo "$GRUB_CFG_CONTENT" > "$TFTP_ROOT/grub.cfg"
 echo "[OK] grub.cfg written to /boot/grub/ and TFTP root"
 
 # 复制 LiveOS vmlinuz/initrd 到 TFTP 根目录（GRUB 通过 TFTP 加载）
-[ -f "$PWD/workspace/liveos/vmlinuz" ] && cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz"
-[ -f "$PWD/workspace/liveos/initrd" ] && cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/liveos-initrd"
+[ -f "$PWD/workspace/liveos/vmlinuz" ] && { cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz"; chmod 755 "$TFTP_ROOT/liveos-vmlinuz"; }
+[ -f "$PWD/workspace/liveos/initrd" ] && { cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/liveos-initrd"; chmod 755 "$TFTP_ROOT/liveos-initrd"; }
 
 # ---- LiveOS initrd casper 注入检查 ----
 # 黄金机的 initrd 不含 casper 模块，boot=casper 会失败
@@ -252,6 +253,7 @@ if [ -f "$TFTP_ROOT/grubaa64.efi" ] && [ -s "$TFTP_ROOT/grubaa64.efi" ]; then
     echo "[OK] grubaa64.efi already in tftp-root ($(du -h "$TFTP_ROOT/grubaa64.efi" | cut -f1))"
 elif [ -f "$PWD/tftp-grub/grubaa64.efi" ] && [ -s "$PWD/tftp-grub/grubaa64.efi" ]; then
     cp "$PWD/tftp-grub/grubaa64.efi" "$TFTP_ROOT/grubaa64.efi"
+    chmod 755 "$TFTP_ROOT/grubaa64.efi"
     echo "[OK] grubaa64.efi copied from tftp-grub/"
 else
     echo "=== Trying to extract grubaa64.efi from Docker image ==="
@@ -280,6 +282,7 @@ if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
     if mountpoint -q "$ISO_MOUNT"; then
         cp "$ISO_MOUNT/casper/vmlinuz" "$TFTP_ROOT/casper/" 2>/dev/null || true
         cp "$ISO_MOUNT/casper/initrd" "$TFTP_ROOT/casper/" 2>/dev/null || true
+        chmod -R 755 "$TFTP_ROOT/casper/"
         sudo umount "$ISO_MOUNT" 2>/dev/null || true
         echo "[OK] Casper kernel/initrd extracted from ISO for Install mode"
     else
