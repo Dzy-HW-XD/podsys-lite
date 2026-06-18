@@ -244,11 +244,21 @@ mkdir -p "$TFTP_ROOT/ipxe"
 cp "$PWD/ipxe/"*.ipxe "$TFTP_ROOT/ipxe/" 2>/dev/null || true
 
 # ---- grubaa64.efi 处理 ----
-# 优先使用 Docker 镜像中预构建的 grubaa64.efi（内嵌 TFTP 前缀）
-# 如果镜像中没有（旧版镜像），则在宿主机上用 grub-mkimage 构建
-if [ ! -f "$TFTP_ROOT/grubaa64.efi" ]; then
-    echo "[WARNING] grubaa64.efi not found in tftp-root"
-    echo "  Trying to build with grub-mkimage..."
+# 从 Docker 镜像中提取预构建的 grubaa64.efi（内嵌 TFTP 前缀）
+# 镜像构建时已用 grub-mkimage 生成，prefix=(tftp)/boot/grub
+# 因为 -v tftp-root:/tftp 会覆盖容器内 /tftp，必须先提取到宿主机
+echo ""
+echo "=== Extracting grubaa64.efi from Docker image ==="
+_TMP_CONTAINER=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null)
+if [ -n "$_TMP_CONTAINER" ]; then
+    docker cp "$_TMP_CONTAINER:/tftp/grubaa64.efi" "$TFTP_ROOT/grubaa64.efi" 2>/dev/null
+    docker rm "$_TMP_CONTAINER" >/dev/null 2>&1
+fi
+if [ -f "$TFTP_ROOT/grubaa64.efi" ] && [ -s "$TFTP_ROOT/grubaa64.efi" ]; then
+    echo "[OK] grubaa64.efi extracted from image ($(du -h "$TFTP_ROOT/grubaa64.efi" | cut -f1))"
+    echo "     Embedded prefix=(tftp)/boot/grub"
+else
+    echo "[WARNING] grubaa64.efi not found in image, trying to build on host..."
     if ! command -v grub-mkimage &>/dev/null || [ ! -f /usr/lib/grub/arm64-efi/moddep.lst ]; then
         echo "  Installing grub-efi-arm64-bin..."
         sudo apt-get update -qq
@@ -261,15 +271,14 @@ set root=(tftp)
 set prefix=(tftp)/boot/grub
 configfile ${prefix}/grub.cfg
 EARLYEOF
-        GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
+        GRUB_MODULES="normal configfile tftp efinet net linux boot echo gzio"
         grub-mkimage -O arm64-efi -o "$TFTP_ROOT/grubaa64.efi" -p "(tftp)/boot/grub" -c "$EARLY_CFG" $GRUB_MODULES
         rm -f "$EARLY_CFG"
         echo "[OK] grubaa64.efi built on host"
     else
         echo "[ERROR] Cannot build grubaa64.efi! PXE boot will not work."
+        echo "  Rebuild Docker image with: docker build -t ainexus-lite:v2.0 -f docker/Dockerfile ."
     fi
-else
-    echo "[OK] grubaa64.efi ready (from Docker image or previous build)"
 fi
 
 # 从 ISO 提取 casper 内核/initrd 到 TFTP（仅安装模式需要）

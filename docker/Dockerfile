@@ -33,18 +33,14 @@ RUN cp /usr/lib/ipxe/undionly.kpxe      /tftp/undionly.kpxe 2>/dev/null || true 
 # --- 构建内嵌 TFTP 前缀的 grubaa64.efi ---
 # ISO 原始 grubaa64.efi 的 prefix 指向本地磁盘，PXE 启动找不到 grub.cfg
 # 用 grub-mkimage 重建，内嵌早期配置设置 root=(tftp) prefix=(tftp)/boot/grub
-RUN cat > /tmp/grub-early.cfg <<'EARLYEOF' \
-    && grub-mkimage \
+RUN printf 'set root=(tftp)\nset prefix=(tftp)/boot/grub\nconfigfile ${prefix}/grub.cfg\n' > /tmp/grub-early.cfg && \
+    grub-mkimage \
         -O arm64-efi \
         -o /tftp/grubaa64.efi \
         -p "(tftp)/boot/grub" \
         -c /tmp/grub-early.cfg \
-        normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2 \
-    && rm -f /tmp/grub-early.cfg
-set root=(tftp)
-set prefix=(tftp)/boot/grub
-configfile ${prefix}/grub.cfg
-EARLYEOF
+        normal configfile tftp efinet net linux boot echo gzio && \
+    rm -f /tmp/grub-early.cfg
 
 # --- iPXE 引导菜单脚本 ---
 COPY ipxe/ /tftp/ipxe/
