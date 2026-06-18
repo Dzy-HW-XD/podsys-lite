@@ -133,12 +133,11 @@ if type uname >/dev/null 2>&1; then
     IMAGE_TAR="${IMAGE_FILE}.tar"
     if [ -f "$IMAGE_TAR" ]; then
         echo "Loading Docker image: ${IMAGE_TAR} ..."
-        LOADED_IMAGE=$(docker load -i "$IMAGE_TAR" 2>&1 | tail -1 | sed 's/Loaded image: //')
+        LOADED_IMAGE=$(docker load -i "$IMAGE_TAR" 2>&1 | grep "Loaded image" | sed 's/Loaded image: //')
         echo "Image loaded: ${LOADED_IMAGE}"
-        # 确保 tag 一致
-        if [ "$LOADED_IMAGE" != "${IMAGE_NAME}:${IMAGE_TAG}" ]; then
-            docker tag "$LOADED_IMAGE" ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
-        fi
+        # 确保 tag 一致（无论 load 出来的名字是什么，都 re-tag 为统一名字）
+        docker tag "${LOADED_IMAGE}" ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
+        echo "Image tagged: ${IMAGE_NAME}:${IMAGE_TAG}"
     elif [ -f "$IMAGE_FILE" ]; then
         # 兼容旧版扁平格式
         echo "Importing Docker image (legacy): ${IMAGE_FILE} ..."
