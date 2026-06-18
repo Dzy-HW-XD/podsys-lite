@@ -243,8 +243,55 @@ fi
 mkdir -p "$TFTP_ROOT/ipxe"
 cp "$PWD/ipxe/"*.ipxe "$TFTP_ROOT/ipxe/" 2>/dev/null || true
 
-# 从 ISO 提取 casper 内核/initrd 到 TFTP（安装模式用）
-# 同时重建 grubaa64.efi 使其内嵌 TFTP 前缀（ISO 原始 EFI 的 prefix 指向本地磁盘）
+# ---- 重建 grubaa64.efi（内嵌 TFTP 早期配置）----
+# ISO 原始 grubaa64.efi 的 prefix 指向本地磁盘，PXE 启动时找不到 grub.cfg
+# 必须用 grub-mkimage 重建，这个步骤不依赖 ISO 文件
+echo ""
+echo "=== Rebuilding grubaa64.efi with TFTP prefix ==="
+if ! command -v grub-mkimage &>/dev/null; then
+    echo "Installing grub-efi-arm64-bin for grub-mkimage..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq grub-efi-arm64-bin 2>/dev/null
+fi
+
+if command -v grub-mkimage &>/dev/null; then
+    EARLY_CFG=$(mktemp)
+    cat > "$EARLY_CFG" <<'EARLYEOF'
+set root=(tftp)
+set prefix=(tftp)/boot/grub
+configfile ${prefix}/grub.cfg
+EARLYEOF
+
+    GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
+
+    grub-mkimage \
+        -O arm64-efi \
+        -o "$TFTP_ROOT/grubaa64.efi" \
+        -p "(tftp)/boot/grub" \
+        -c "$EARLY_CFG" \
+        $GRUB_MODULES
+
+    rm -f "$EARLY_CFG"
+    echo "[OK] grubaa64.efi rebuilt with TFTP prefix"
+    echo "     prefix=(tftp)/boot/grub"
+    echo "     early config embedded"
+else
+    echo "[ERROR] grub-mkimage not available!"
+    echo "  Install grub-efi-arm64-bin manually: sudo apt install grub-efi-arm64-bin"
+    echo "  PXE boot will NOT work without rebuilt grubaa64.efi"
+    # 尝试从 ISO 提取作为降级
+    if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
+        ISO_MOUNT="/tmp/podsys-iso-mount"
+        mkdir -p "$ISO_MOUNT"
+        sudo mount -o loop,ro "$PWD/workspace/$ISO_NAME" "$ISO_MOUNT" 2>/dev/null || true
+        if mountpoint -q "$ISO_MOUNT"; then
+            [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
+            sudo umount "$ISO_MOUNT" 2>/dev/null || true
+            echo "[WARNING] Using ISO original grubaa64.efi (may not work with PXE)"
+        fi
+    fi
+fi
+
+# 从 ISO 提取 casper 内核/initrd 到 TFTP（仅安装模式需要）
 if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
     ISO_MOUNT="/tmp/podsys-iso-mount"
     mkdir -p "$ISO_MOUNT"
@@ -252,46 +299,10 @@ if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
     if mountpoint -q "$ISO_MOUNT"; then
         cp "$ISO_MOUNT/casper/vmlinuz" "$TFTP_ROOT/casper/" 2>/dev/null || true
         cp "$ISO_MOUNT/casper/initrd" "$TFTP_ROOT/casper/" 2>/dev/null || true
-
-        # ---- 重建 grubaa64.efi（内嵌 TFTP 早期配置）----
-        echo ""
-        echo "=== Rebuilding grubaa64.efi with TFTP prefix ==="
-        # 确保有 grub-mkimage
-        if ! command -v grub-mkimage &>/dev/null; then
-            echo "Installing grub-efi-arm64-bin for grub-mkimage..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq grub-efi-arm64-bin 2>/dev/null
-        fi
-
-        if command -v grub-mkimage &>/dev/null; then
-            # 创建早期嵌入配置：设置 TFTP root/prefix，加载真正的 grub.cfg
-            EARLY_CFG=$(mktemp)
-            cat > "$EARLY_CFG" <<'EARLYEOF'
-set root=(tftp)
-set prefix=(tftp)/boot/grub
-configfile ${prefix}/grub.cfg
-EARLYEOF
-
-            # GRUB PXE 启动需要的模块
-            GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
-
-            grub-mkimage \
-                -O arm64-efi \
-                -o "$TFTP_ROOT/grubaa64.efi" \
-                -p "(tftp)/boot/grub" \
-                -c "$EARLY_CFG" \
-                $GRUB_MODULES
-
-            rm -f "$EARLY_CFG"
-            echo "[OK] grubaa64.efi rebuilt with TFTP prefix"
-            echo "     prefix=(tftp)/boot/grub"
-            echo "     early config embedded"
-        else
-            echo "[WARNING] grub-mkimage not available, using ISO original grubaa64.efi"
-            echo "  This may not work with PXE boot (prefix points to local disk)"
-            [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
-        fi
-
         sudo umount "$ISO_MOUNT" 2>/dev/null || true
+        echo "[OK] Casper kernel/initrd extracted from ISO for Install mode"
+    else
+        echo "[WARNING] Could not mount ISO, Install mode may not work"
     fi
 fi
 
