@@ -1,0 +1,8 @@
+manager_ip: 192.168.100.1
+dhcp_s: 192.168.100.10
+dhcp_e: 192.168.100.20
+manager_nic: enp97s0f1
+nexus_passwd: yourpasswd
+PermitRootLogin: yes
+compute_storage: MAX_SATA
+iso: ubuntu-24.04.4-live-server-amd64.iso
