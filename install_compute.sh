@@ -165,10 +165,9 @@ chain http://${manager_ip}:5001/ipxe/menu.ipxe
 AUTOEOF
 
 # 生成 GRUB 配置（ARM64 GB300 用 GRUB 引导替代崩溃的 iPXE）
-# GRUB 默认搜索路径: (tftp)/boot/grub/grub.cfg
 mkdir -p "$TFTP_ROOT/boot/grub"
 ISO_NAME=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
-cat > "$TFTP_ROOT/boot/grub/grub.cfg" <<GRUBEOF
+GRUB_CFG_CONTENT=$(cat <<GRUBEOF
 set default=0
 set timeout=5
 
@@ -186,12 +185,19 @@ menuentry "Reboot" {
     reboot
 }
 GRUBEOF
+)
+
+# 写入 grub.cfg 到多个位置确保 GRUB 能找到
+echo "$GRUB_CFG_CONTENT" > "$TFTP_ROOT/boot/grub/grub.cfg"
+echo "$GRUB_CFG_CONTENT" > "$TFTP_ROOT/grub.cfg"
+echo "[OK] grub.cfg written to /boot/grub/ and TFTP root"
 
 # 复制 LiveOS vmlinuz/initrd 到 TFTP（GRUB 通过 TFTP 加载）
 [ -f "$PWD/workspace/liveos/vmlinuz" ] && cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/ipxe/liveos-vmlinuz"
 [ -f "$PWD/workspace/liveos/initrd" ] && cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/ipxe/liveos-initrd"
 
 # 从 ISO 提取 casper 内核/initrd 到 TFTP（安装模式用）
+# 同时重建 grubaa64.efi 使其内嵌 TFTP 前缀（ISO 原始 EFI 的 prefix 指向本地磁盘）
 if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
     ISO_MOUNT="/tmp/podsys-iso-mount"
     mkdir -p "$ISO_MOUNT"
@@ -199,8 +205,45 @@ if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
     if mountpoint -q "$ISO_MOUNT"; then
         cp "$ISO_MOUNT/casper/vmlinuz" "$TFTP_ROOT/casper/" 2>/dev/null || true
         cp "$ISO_MOUNT/casper/initrd" "$TFTP_ROOT/casper/" 2>/dev/null || true
-        # 提取 grubaa64.efi
-        [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
+
+        # ---- 重建 grubaa64.efi（内嵌 TFTP 早期配置）----
+        echo ""
+        echo "=== Rebuilding grubaa64.efi with TFTP prefix ==="
+        # 确保有 grub-mkimage
+        if ! command -v grub-mkimage &>/dev/null; then
+            echo "Installing grub-efi-arm64-bin for grub-mkimage..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq grub-efi-arm64-bin 2>/dev/null
+        fi
+
+        if command -v grub-mkimage &>/dev/null; then
+            # 创建早期嵌入配置：设置 TFTP root/prefix，加载真正的 grub.cfg
+            EARLY_CFG=$(mktemp)
+            cat > "$EARLY_CFG" <<'EARLYEOF'
+set root=(tftp)
+set prefix=(tftp)/boot/grub
+configfile ${prefix}/grub.cfg
+EARLYEOF
+
+            # GRUB PXE 启动需要的模块
+            GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
+
+            grub-mkimage \
+                -O arm64-efi \
+                -o "$TFTP_ROOT/grubaa64.efi" \
+                -p "(tftp)/boot/grub" \
+                -c "$EARLY_CFG" \
+                $GRUB_MODULES
+
+            rm -f "$EARLY_CFG"
+            echo "[OK] grubaa64.efi rebuilt with TFTP prefix"
+            echo "     prefix=(tftp)/boot/grub"
+            echo "     early config embedded"
+        else
+            echo "[WARNING] grub-mkimage not available, using ISO original grubaa64.efi"
+            echo "  This may not work with PXE boot (prefix points to local disk)"
+            [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
+        fi
+
         sudo umount "$ISO_MOUNT" 2>/dev/null || true
     fi
 fi
