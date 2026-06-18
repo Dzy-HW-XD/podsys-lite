@@ -248,9 +248,10 @@ cp "$PWD/ipxe/"*.ipxe "$TFTP_ROOT/ipxe/" 2>/dev/null || true
 # 必须用 grub-mkimage 重建，这个步骤不依赖 ISO 文件
 echo ""
 echo "=== Rebuilding grubaa64.efi with TFTP prefix ==="
-if ! command -v grub-mkimage &>/dev/null; then
+if ! command -v grub-mkimage &>/dev/null || [ ! -f /usr/lib/grub/arm64-efi/moddep.lst ]; then
     echo "Installing grub-efi-arm64-bin for grub-mkimage..."
-    sudo apt-get update -qq && sudo apt-get install -y -qq grub-efi-arm64-bin 2>/dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y grub-efi-arm64-bin
 fi
 
 if command -v grub-mkimage &>/dev/null; then
