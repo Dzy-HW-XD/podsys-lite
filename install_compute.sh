@@ -133,10 +133,15 @@ if type uname >/dev/null 2>&1; then
     IMAGE_TAR="${IMAGE_FILE}.tar"
     if [ -f "$IMAGE_TAR" ]; then
         echo "Loading Docker image: ${IMAGE_TAR} ..."
-        LOADED_IMAGE=$(docker load -i "$IMAGE_TAR" 2>&1 | grep "Loaded image" | sed 's/Loaded image: //')
+        LOADED_IMAGE=$(docker load -i "$IMAGE_TAR" 2>&1 | grep "^Loaded image:" | head -1 | sed 's/^Loaded image: //')
         echo "Image loaded: ${LOADED_IMAGE}"
-        # 确保 tag 一致（无论 load 出来的名字是什么，都 re-tag 为统一名字）
-        docker tag "${LOADED_IMAGE}" ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
+        if [ -z "$LOADED_IMAGE" ]; then
+            echo "[Warning] Could not detect loaded image name, trying fallback..."
+            LOADED_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+        fi
+        # 无论 load 出来的名字是什么，都 re-tag 为统一名字
+        docker tag "${LOADED_IMAGE}" ${IMAGE_NAME}:${IMAGE_TAG}
+        echo "Tagged as: ${IMAGE_NAME}:${IMAGE_TAG}"
         echo "Image tagged: ${IMAGE_NAME}:${IMAGE_TAG}"
     elif [ -f "$IMAGE_FILE" ]; then
         # 兼容旧版扁平格式
