@@ -130,18 +130,18 @@ if type uname >/dev/null 2>&1; then
         ;;
     esac
 
-    if [ -f "$IMAGE_FILE" ]; then
-        echo "Importing Docker image: ${IMAGE_FILE} ..."
-        docker import "$IMAGE_FILE" ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null &
-        pid=$!
-        while ps -p $pid >/dev/null; do
-            echo -n "*"
-            sleep 2
-        done
-        echo ""
+    IMAGE_TAR="${IMAGE_FILE}.tar"
+    if [ -f "$IMAGE_TAR" ]; then
+        echo "Loading Docker image: ${IMAGE_TAR} ..."
+        docker load -i "$IMAGE_TAR" 2>&1
+        echo "Image loaded: ${IMAGE_NAME}:${IMAGE_TAG}"
+    elif [ -f "$IMAGE_FILE" ]; then
+        # 兼容旧版扁平格式
+        echo "Importing Docker image (legacy): ${IMAGE_FILE} ..."
+        docker import "$IMAGE_FILE" ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null
         echo "Image imported: ${IMAGE_NAME}:${IMAGE_TAG}"
     else
-        echo "[ERROR] Docker image file not found: $IMAGE_FILE"
+        echo "[ERROR] Docker image file not found: $IMAGE_TAR"
         echo "Run scripts/build_docker.sh to build the image first."
         exit 1
     fi
