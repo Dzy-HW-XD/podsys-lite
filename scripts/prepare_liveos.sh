@@ -7,14 +7,15 @@
 # 用法:
 #   bash prepare_liveos.sh [输出目录]
 #
-# 输出:
-#   vmlinuz              - ARM64 内核
-#   initrd               - 原始 initramfs（可能缺少 casper）
-#   filesystem.squashfs  - 根文件系统压缩镜像
+# 默认输出:
+#   /home/nexus/podsys-liveos/
+#     vmlinuz              - ARM64 内核
+#     initrd               - 原始 initramfs（可能缺少 casper）
+#     filesystem.squashfs  - 根文件系统压缩镜像
 # ============================================================
 set -e
 
-OUTPUT_DIR="${1:-/tmp/podsys-liveos}"
+OUTPUT_DIR="${1:-/home/nexus/podsys-liveos}"
 mkdir -p "$OUTPUT_DIR"
 
 echo "============================================"
