@@ -82,25 +82,26 @@ echo "[3/3] Creating squashfs (this may take 10-30 minutes)..."
 echo "  Compressing root filesystem (read-only, no system changes)..."
 
 cat > /tmp/podsys-exclude.txt << 'EXCLUDE_EOF'
-/proc/*
-/sys/*
-/dev/*
-/tmp/*
-/run/*
-/mnt/*
-/media/*
-/lost+found
-/swapfile
-/etc/fstab
-/etc/mtab
-/boot/grub/*
-/var/cache/apt/archives/*
-/home/*/.cache/*
-/root/.cache/*
-/var/log/journal/*
+proc
+sys
+dev
+tmp
+run
+mnt
+media
+lost+found
+swapfile
+etc/fstab
+etc/mtab
+boot/grub
+var/cache/apt/archives
+home/*/.cache
+root/.cache
+var/log/journal
 EXCLUDE_EOF
 
-echo "$OUTPUT_DIR/*" >> /tmp/podsys-exclude.txt
+# 排除输出目录自身，避免递归打包
+echo "${OUTPUT_DIR#/}" >> /tmp/podsys-exclude.txt
 
 mksquashfs / "$OUTPUT_DIR/filesystem.squashfs" \
     -ef /tmp/podsys-exclude.txt \
