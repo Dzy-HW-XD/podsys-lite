@@ -161,8 +161,10 @@ chain http://${manager_ip}:5001/ipxe/menu.ipxe
 AUTOEOF
 
 # 生成 GRUB 配置（ARM64 GB300 用 GRUB 引导替代崩溃的 iPXE）
+# GRUB 默认搜索路径: (tftp)/boot/grub/grub.cfg
+mkdir -p "$TFTP_ROOT/boot/grub"
 ISO_NAME=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
-cat > "$TFTP_ROOT/grub.cfg" <<GRUBEOF
+cat > "$TFTP_ROOT/boot/grub/grub.cfg" <<GRUBEOF
 set default=0
 set timeout=5
 
