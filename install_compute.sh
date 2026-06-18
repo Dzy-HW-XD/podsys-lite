@@ -244,40 +244,31 @@ mkdir -p "$TFTP_ROOT/ipxe"
 cp "$PWD/ipxe/"*.ipxe "$TFTP_ROOT/ipxe/" 2>/dev/null || true
 
 # ---- grubaa64.efi 处理 ----
-# 从 Docker 镜像中提取预构建的 grubaa64.efi（内嵌 TFTP 前缀）
-# 镜像构建时已用 grub-mkimage 生成，prefix=(tftp)/boot/grub
-# 因为 -v tftp-root:/tftp 会覆盖容器内 /tftp，必须先提取到宿主机
-echo ""
-echo "=== Extracting grubaa64.efi from Docker image ==="
-_TMP_CONTAINER=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null)
-if [ -n "$_TMP_CONTAINER" ]; then
-    docker cp "$_TMP_CONTAINER:/tftp/grubaa64.efi" "$TFTP_ROOT/grubaa64.efi" 2>/dev/null
-    docker rm "$_TMP_CONTAINER" >/dev/null 2>&1
-fi
+# 优先级：1) tftp-root 已有有效文件 → 跳过
+#         2) 仓库 tftp-grub/grubaa64.efi → 复制
+#         3) Docker 镜像内预构建 → 提取
+#         4) 宿主机 grub-mkimage → 构建（最后降级）
 if [ -f "$TFTP_ROOT/grubaa64.efi" ] && [ -s "$TFTP_ROOT/grubaa64.efi" ]; then
-    echo "[OK] grubaa64.efi extracted from image ($(du -h "$TFTP_ROOT/grubaa64.efi" | cut -f1))"
-    echo "     Embedded prefix=(tftp)/boot/grub"
+    echo "[OK] grubaa64.efi already in tftp-root ($(du -h "$TFTP_ROOT/grubaa64.efi" | cut -f1))"
+elif [ -f "$PWD/tftp-grub/grubaa64.efi" ] && [ -s "$PWD/tftp-grub/grubaa64.efi" ]; then
+    cp "$PWD/tftp-grub/grubaa64.efi" "$TFTP_ROOT/grubaa64.efi"
+    echo "[OK] grubaa64.efi copied from tftp-grub/"
 else
-    echo "[WARNING] grubaa64.efi not found in image, trying to build on host..."
-    if ! command -v grub-mkimage &>/dev/null || [ ! -f /usr/lib/grub/arm64-efi/moddep.lst ]; then
-        echo "  Installing grub-efi-arm64-bin..."
-        sudo apt-get update -qq
-        sudo apt-get install -y grub-efi-arm64-bin
+    echo "=== Trying to extract grubaa64.efi from Docker image ==="
+    _TMP_CONTAINER=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null)
+    if [ -n "$_TMP_CONTAINER" ]; then
+        docker cp "$_TMP_CONTAINER:/tftp/grubaa64.efi" "$TFTP_ROOT/grubaa64.efi" 2>/dev/null
+        docker rm "$_TMP_CONTAINER" >/dev/null 2>&1
     fi
-    if command -v grub-mkimage &>/dev/null; then
-        EARLY_CFG=$(mktemp)
-        cat > "$EARLY_CFG" <<'EARLYEOF'
-set root=(tftp)
-set prefix=(tftp)/boot/grub
-configfile ${prefix}/grub.cfg
-EARLYEOF
-        GRUB_MODULES="normal configfile tftp efinet net linux boot echo gzio"
-        grub-mkimage -O arm64-efi -o "$TFTP_ROOT/grubaa64.efi" -p "(tftp)/boot/grub" -c "$EARLY_CFG" $GRUB_MODULES
-        rm -f "$EARLY_CFG"
-        echo "[OK] grubaa64.efi built on host"
+    if [ -f "$TFTP_ROOT/grubaa64.efi" ] && [ -s "$TFTP_ROOT/grubaa64.efi" ]; then
+        echo "[OK] grubaa64.efi extracted from image"
     else
-        echo "[ERROR] Cannot build grubaa64.efi! PXE boot will not work."
-        echo "  Rebuild Docker image with: docker build -t ainexus-lite:v2.0 -f docker/Dockerfile ."
+        echo "[WARNING] grubaa64.efi not available from image or repo"
+        echo "  Run this to build one:"
+        echo "    docker run --rm --platform linux/arm64 -v $PWD/tftp-root:/output ubuntu:24.04 bash -c '"
+        echo "      apt-get update -qq && apt-get install -y -qq grub-efi-arm64-bin &&"
+        echo "      printf \"set root=(tftp)\\\\nset prefix=(tftp)/boot/grub\\\\nconfigfile \\\${prefix}/grub.cfg\\\\n\" > /tmp/early.cfg &&"
+        echo "      grub-mkimage -O arm64-efi -o /output/grubaa64.efi -p \"(tftp)/boot/grub\" -c /tmp/early.cfg normal configfile tftp efinet net linux boot echo gzio'"
     fi
 fi
 
