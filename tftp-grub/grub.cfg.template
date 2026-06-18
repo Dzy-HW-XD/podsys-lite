@@ -2,12 +2,12 @@ set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /liveos-vmlinuz boot=casper netboot=url live-media-url=http://MANAGER_IP:5001/liveos/ ip=dhcp console=tty0 net.ifnames=0 biosdevname=0
+    linux /liveos-vmlinuz boot=casper url=http://MANAGER_IP:5001/iso/LIVEOS_ISO root=/dev/ram0 ramdisk_size=1500000 ip=dhcp console=tty0 net.ifnames=0 biosdevname=0 cloud-config-url=/dev/null ---
     initrd /liveos-initrd
 }
 
 menuentry "Auto Install OS" {
-    linux /casper/vmlinuz ip=dhcp url=http://MANAGER_IP:5001/workspace/ubuntu-24.04.4-live-server-arm64.iso autoinstall ds=nocloud-net;s=http://MANAGER_IP:5001/user-data/ root=/dev/ram0 cloud-config-url=/dev/null
+    linux /casper/vmlinuz ip=dhcp url=http://MANAGER_IP:5001/workspace/ISO_NAME autoinstall ds=nocloud-net;s=http://MANAGER_IP:5001/user-data/ root=/dev/ram0 cloud-config-url=/dev/null
     initrd /casper/initrd
 }
 
