@@ -1,15 +1,15 @@
 #!/bin/bash
 # ============================================================
-# Podsys Lite - LiveOS 准备脚本
-# 在黄金机（已装好驱动和软件的 GB300）上运行此脚本，
-# 将当前系统打包为 LiveOS 所需的三个文件。
+# Podsys Lite - LiveOS 准备脚本（安全版）
+# 完全只读操作，不修改黄金机任何系统文件。
+# 在已装好驱动和软件的 GB300 黄金机上运行。
 #
 # 用法:
 #   bash prepare_liveos.sh [输出目录]
 #
 # 输出:
 #   vmlinuz              - ARM64 内核
-#   initrd               - 包含网卡驱动的 initramfs
+#   initrd               - 原始 initramfs（可能缺少 casper）
 #   filesystem.squashfs  - 根文件系统压缩镜像
 # ============================================================
 set -e
@@ -18,8 +18,9 @@ OUTPUT_DIR="${1:-/tmp/podsys-liveos}"
 mkdir -p "$OUTPUT_DIR"
 
 echo "============================================"
-echo "  Podsys Lite - LiveOS Preparation"
+echo "  Podsys Lite - LiveOS Preparation (Safe)"
 echo "  Output: $OUTPUT_DIR"
+echo "  Mode: READ-ONLY - no system modification"
 echo "============================================"
 
 # ---- 检查运行环境 ----
@@ -34,64 +35,51 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-# ---- 检查必要工具 ----
+# ---- 检查必要工具（不安装，只检查） ----
 echo ""
-echo "[1/5] Checking tools..."
-for tool in mksquashfs unsquashfs; do
+echo "[1/3] Checking tools..."
+MISSING_TOOLS=""
+for tool in mksquashfs; do
     if ! command -v $tool &>/dev/null; then
-        echo "  Installing squashfs-tools..."
-        apt-get update -qq && apt-get install -y -qq squashfs-tools
-        break
+        MISSING_TOOLS="$MISSING_TOOLS $tool"
     fi
 done
-echo "  [OK] squashfs-tools ready"
+if [ -n "$MISSING_TOOLS" ]; then
+    echo "[ERROR] Missing tools:${MISSING_TOOLS}"
+    echo "  Install manually: apt-get install -y squashfs-tools"
+    exit 1
+fi
+echo "  [OK] All tools available"
 
-# ---- 清理系统 ----
+# ---- 检查关键驱动（只读） ----
 echo ""
-echo "[2/5] Cleaning system..."
-apt-get clean 2>/dev/null || true
-rm -rf /var/cache/apt/archives/* 2>/dev/null || true
-journalctl --vacuum-size=50M 2>/dev/null || true
-find /var/log -type f -name "*.log" -exec truncate -s 0 {} \; 2>/dev/null || true
-rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-echo "  [OK] System cleaned"
-
-# ---- 确认关键驱动 ----
-echo ""
-echo "[3/5] Checking network drivers..."
-# I210 网卡使用 igb 驱动
+echo "[2/3] Checking drivers..."
 if lsmod | grep -q igb; then
     echo "  [OK] igb driver loaded (I210)"
 else
-    echo "  [WARNING] igb driver not loaded, check if I210 is present"
+    echo "  [WARNING] igb driver not loaded"
 fi
 
-# 确保 igb 在 initramfs 模块列表中
-if [ -d /etc/initramfs-tools ]; then
-    if ! grep -q "^igb$" /etc/initramfs-tools/modules 2>/dev/null; then
-        echo "igb" >> /etc/initramfs-tools/modules
-        echo "  Added igb to initramfs modules"
-    fi
-fi
-
-# 确保 casper 已安装（LiveOS 引导必需）
-if ! dpkg -l casper 2>/dev/null | grep -q "^ii"; then
-    echo "  Installing casper package..."
-    apt-get install -y -qq casper
-fi
-echo "  [OK] casper installed"
-
-# ---- 重新生成 initrd（确保包含 igb 和 casper） ----
-echo ""
-echo "[4/5] Regenerating initrd..."
+# 检查 initrd 中是否已有 casper
 CURRENT_KERNEL=$(uname -r)
-update-initramfs -u -k "$CURRENT_KERNEL"
-echo "  [OK] initrd regenerated for kernel $CURRENT_KERNEL"
+INITRD_PATH="/boot/initrd.img-${CURRENT_KERNEL}"
+if command -v lsinitramfs &>/dev/null; then
+    if lsinitramfs "$INITRD_PATH" 2>/dev/null | grep -q 'casper'; then
+        echo "  [OK] casper found in initrd"
+    else
+        echo "  [WARNING] casper NOT found in initrd"
+        echo "  -> After copying to management node, run:"
+        echo "     bash scripts/inject_casper.sh workspace/liveos/initrd"
+    fi
+else
+    echo "  [INFO] Cannot check initrd contents (lsinitramfs not available)"
+    echo "  -> If LiveOS boot fails, initrd may need casper injection"
+fi
 
-# ---- 制作 squashfs ----
+# ---- 制作 squashfs（只读） ----
 echo ""
-echo "[5/5] Creating squashfs (this may take 10-30 minutes)..."
-echo "  This compresses the entire root filesystem."
+echo "[3/3] Creating squashfs (this may take 10-30 minutes)..."
+echo "  Compressing root filesystem (read-only, no system changes)..."
 
 cat > /tmp/podsys-exclude.txt << 'EXCLUDE_EOF'
 /proc/*
@@ -112,24 +100,21 @@ cat > /tmp/podsys-exclude.txt << 'EXCLUDE_EOF'
 /var/log/journal/*
 EXCLUDE_EOF
 
-# 额外排除输出目录自身（避免递归）
 echo "$OUTPUT_DIR/*" >> /tmp/podsys-exclude.txt
 
-echo "  Running mksquashfs..."
 mksquashfs / "$OUTPUT_DIR/filesystem.squashfs" \
     -ef /tmp/podsys-exclude.txt \
     -comp xz \
     -b 1M \
     -noappend
 
-echo "  [OK] squashfs created: $OUTPUT_DIR/filesystem.squashfs"
-echo "  Size: $(du -h "$OUTPUT_DIR/filesystem.squashfs" | cut -f1)"
+echo "  [OK] squashfs: $(du -h "$OUTPUT_DIR/filesystem.squashfs" | cut -f1)"
 
-# ---- 复制内核和 initrd ----
+# ---- 复制内核和 initrd（只读） ----
 echo ""
 echo "Copying kernel and initrd..."
 cp /boot/vmlinuz-"$CURRENT_KERNEL" "$OUTPUT_DIR/vmlinuz"
-cp /boot/initrd.img-"$CURRENT_KERNEL" "$OUTPUT_DIR/initrd"
+cp "$INITRD_PATH" "$OUTPUT_DIR/initrd"
 
 echo "  [OK] vmlinuz ($(du -h "$OUTPUT_DIR/vmlinuz" | cut -f1))"
 echo "  [OK] initrd  ($(du -h "$OUTPUT_DIR/initrd" | cut -f1))"
@@ -146,21 +131,19 @@ echo "  $OUTPUT_DIR/initrd"
 echo "  $OUTPUT_DIR/filesystem.squashfs"
 echo ""
 echo "Next steps:"
-echo "  1. Copy these 3 files to the management node:"
+echo "  1. Copy to management node:"
 echo "     scp $OUTPUT_DIR/{vmlinuz,initrd,filesystem.squashfs} root@<manager>:/root/podsys-lite/workspace/liveos/"
 echo ""
-echo "  2. On the management node, set liveos_enable: yes in workspace/config.yaml"
+echo "  2. If initrd lacks casper, inject it on management node:"
+echo "     bash scripts/inject_casper.sh workspace/liveos/initrd"
 echo ""
-echo "  3. Start the Podsys Lite container:"
+echo "  3. Start Podsys Lite:"
 echo "     bash install_compute.sh"
 echo ""
-echo "  4. Target machines will see the LiveOS option in the iPXE boot menu"
-echo ""
-echo "Estimated memory requirement on target:"
 SQUASHFS_SIZE=$(du -b "$OUTPUT_DIR/filesystem.squashfs" | cut -f1)
 UNCOMPRESSED_ESTIMATE=$(( SQUASHFS_SIZE * 3 / 1024 / 1024 / 1024 ))
+echo "Memory estimate:"
 echo "  squashfs: $(du -h "$OUTPUT_DIR/filesystem.squashfs" | cut -f1)"
 echo "  estimated uncompressed: ~${UNCOMPRESSED_ESTIMATE} GB"
 echo "  recommended target RAM: ~$(( UNCOMPRESSED_ESTIMATE + 4 )) GB"
-echo "  current ramdisk_size: 33554432 KB (32 GB)"
 echo ""
