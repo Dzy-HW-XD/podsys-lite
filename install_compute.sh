@@ -56,13 +56,6 @@ check_iplist_format "workspace/iplist.txt"
 # ---- 读取配置 ----
 CONFIG_FILE="workspace/config.yaml"
 if [ -f "$CONFIG_FILE" ]; then
-    iso=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
-    if [ -n "$iso" ] && [ ! -f "workspace/${iso}" ]; then
-        echo "Error: ISO not exist: workspace/${iso}"
-        echo "Please download the ISO file and place it in the workspace directory."
-        exit 1
-    fi
-
     manager_ip=$(grep "manager_ip" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
     manager_nic=$(grep "manager_nic" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
 
@@ -100,6 +93,14 @@ if [ -f "$CONFIG_FILE" ]; then
             echo "LiveOS ready."
         fi
         echo "==========================="
+    else
+        # 非 LiveOS 模式才检查 ISO
+        iso=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+        if [ -n "$iso" ] && [ ! -f "workspace/${iso}" ]; then
+            echo "Error: ISO not exist: workspace/${iso}"
+            echo "Please download the ISO file and place it in the workspace directory."
+            exit 1
+        fi
     fi
 fi
 
