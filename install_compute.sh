@@ -173,7 +173,7 @@ set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /liveos-vmlinuz boot=casper netboot=url url=http://${manager_ip}:5001/liveos/filesystem.squashfs ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
+    linux /liveos-vmlinuz boot=casper netboot=url url=http://${manager_ip}:5001/liveos/ ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
     initrd /liveos-initrd
 }
 
