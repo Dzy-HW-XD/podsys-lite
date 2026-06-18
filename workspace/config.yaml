@@ -1,8 +1,32 @@
+# Podsys Lite 配置文件
+# 所有字段冒号后必须有一个空格
+
+# 管理节点 IP（必须）
 manager_ip: 192.168.100.1
+
+# DHCP 地址池范围
 dhcp_s: 192.168.100.10
 dhcp_e: 192.168.100.20
+
+# 管理网卡名称
 manager_nic: enp97s0f1
+
+# nexus 用户密码
 nexus_passwd: yourpasswd
+
+# SSH 允许 root 登录
 PermitRootLogin: yes
+
+# 计算节点存储策略: MAX_SATA / MAX_NVME
 compute_storage: MAX_SATA
-iso: ubuntu-24.04.4-live-server-amd64.iso
+
+# 安装用 ISO 文件名（放在 workspace/ 目录下）
+iso: ubuntu-24.04.4-live-server-arm64.iso
+
+# ========== LiveOS 配置 ==========
+# 是否启用 LiveOS 模式: yes / no
+liveos_enable: yes
+
+# LiveOS squashfs 内存盘大小（单位: KB）
+# GB300 内存充裕，建议 32GB (33554432 KB)
+liveos_ramdisk_size: 33554432

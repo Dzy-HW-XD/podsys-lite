@@ -1,0 +1,29 @@
+#!ipxe
+# Podsys Lite - 自动安装模式
+# 从 ISO 启动，使用 cloud-init 自动安装到磁盘
+
+set product-name PODsysGBxx
+set server http://192.168.0.183:5001/
+
+echo === Podsys Lite - Auto Install Mode ===
+echo Server: ${server}
+echo Serial: ${serial}
+
+:start
+initrd ${server}user-data/initrd || goto fail
+kernel ${server}iso/casper/vmlinuz \
+    initrd=initrd \
+    ip=dhcp \
+    url=${server}workspace/ubuntu-24.04.4-live-server-arm64.iso \
+    autoinstall \
+    ds=nocloud-net;s=${server}user-data/ \
+    motherboardSN=${serial} \
+    podsyslevel=Basic \
+    root=/dev/ram0 \
+    cloud-config-url=/dev/null
+boot || goto fail
+
+:fail
+echo "Install boot failed, retrying in 3 seconds..."
+sleep 3
+goto start

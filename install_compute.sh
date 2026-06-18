@@ -1,13 +1,24 @@
 #!/bin/bash
-cd $(dirname $0)
+# ============================================================
+# Podsys Lite - 一键启动脚本
+# 导入 Docker 镜像并以特权模式启动容器
+# 支持 LiveOS 网络引导模式
+# ============================================================
+set -e
+
+cd "$(dirname "$0")"
 clear
-# delete_logs of dnsmasq(docker)
+
+echo "============================================"
+echo "  Podsys Lite - Network Boot System"
+echo "============================================"
+
+# ---- 日志清理 ----
 delete_logs() {
     if [ ! -d "workspace/log" ]; then
         mkdir -p "workspace/log"
     fi
     logs=("workspace/log/dnsmasq.log")
-
     for log in "${logs[@]}"; do
         if [ -f "$log" ]; then
             rm "$log"
@@ -15,28 +26,23 @@ delete_logs() {
     done
 }
 
-# Function to check the iplist.txt format
+# ---- iplist.txt 格式校验 ----
 check_iplist_format() {
-    file_path="$1"
-    # Check if the file exists
+    local file_path="$1"
     if [ ! -f "$file_path" ]; then
         echo "Warning: File $file_path does not exist."
         return 1
     fi
     while IFS= read -r line; do
-        fields=($line) # Split the line into fields
-        # Check if the number of fields is 5
+        fields=($line)
         if [ ${#fields[@]} -ne 5 ]; then
             echo "Incorrect format on line iplist.txt: $line"
             continue
         fi
-        # Check if the 3rd column is a valid IP address with subnet mask
         if ! echo "${fields[2]}" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$'; then
             echo "Invalid IP address with subnet mask in the 3rd column on line of iplist.txt: $line"
             continue
         fi
-
-        # Check if the DNS column is a valid IP address
         if [ "${fields[4]}" != "none" ] && ! echo "${fields[4]}" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$'; then
             echo "Invalid DNS in the 4th column on line of iplist.txt: $line"
             continue
@@ -47,6 +53,7 @@ check_iplist_format() {
 delete_logs
 check_iplist_format "workspace/iplist.txt"
 
+# ---- 读取配置 ----
 CONFIG_FILE="workspace/config.yaml"
 if [ -f "$CONFIG_FILE" ]; then
     iso=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
@@ -70,48 +77,96 @@ if [ -f "$CONFIG_FILE" ]; then
             exit 1
         fi
     fi
+
+    # ---- LiveOS 检查 ----
+    liveos_enable=$(grep "liveos_enable" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+    if [ "$liveos_enable" = "yes" ] || [ "$liveos_enable" = "true" ]; then
+        echo ""
+        echo "=== LiveOS Mode Enabled ==="
+        LIVEOS_DIR="workspace/liveos"
+        MISSING=""
+        [ -f "$LIVEOS_DIR/vmlinuz" ] || MISSING="$MISSING  vmlinuz"
+        [ -f "$LIVEOS_DIR/initrd" ] || MISSING="$MISSING  initrd"
+        [ -f "$LIVEOS_DIR/filesystem.squashfs" ] || MISSING="$MISSING  filesystem.squashfs"
+        if [ -n "$MISSING" ]; then
+            echo "[WARNING] LiveOS files missing:"
+            echo "$MISSING"
+            echo "  Place them in ${LIVEOS_DIR}/"
+            echo "  See scripts/prepare_liveos.sh for instructions"
+        else
+            echo "[OK] vmlinuz"
+            echo "[OK] initrd"
+            echo "[OK] filesystem.squashfs ($(du -h ${LIVEOS_DIR}/filesystem.squashfs | cut -f1))"
+            echo "LiveOS ready."
+        fi
+        echo "==========================="
+    fi
 fi
 
-if docker ps -a --format '{{.Image}}' | grep -q "ainexus-lite:v1.0"; then
-    docker stop $(docker ps -a -q --filter ancestor=ainexus-lite:v1.0) >/dev/null
-    docker rm $(docker ps -a -q --filter ancestor=ainexus-lite:v1.0) >/dev/null
-    docker rmi ainexus-lite:v1.0 >/dev/null
+# ---- Docker 镜像管理 ----
+IMAGE_NAME="ainexus-lite"
+IMAGE_TAG="v2.0"
+
+if docker ps -a --format '{{.Image}}' | grep -q "${IMAGE_NAME}:${IMAGE_TAG}"; then
+    docker stop $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
+    docker rm $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
+    docker rmi ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null 2>&1 || true
 fi
 
-
+# 检测架构并导入镜像
 if type uname >/dev/null 2>&1; then
     arch=$(uname -m)
     case "$arch" in
     aarch64)
-        docker import ainexus-lite-arm ainexus-lite:v1.0 >/dev/null &
-        pid=$!
-        while ps -p $pid >/dev/null; do
-            echo -n "*"
-            sleep 2
-        done
-        echo
+        IMAGE_FILE="ainexus-lite-arm"
         ;;
     amd64 | x86_64)
-        docker import ainexus-lite ainexus-lite:v1.0 >/dev/null &
-        pid=$!
-        while ps -p $pid >/dev/null; do
-            echo -n "*"
-            sleep 2
-        done
-        echo
+        IMAGE_FILE="ainexus-lite"
         ;;
     *)
         echo "[Error]: Processor $arch is not supported"
         exit 1
         ;;
     esac
+
+    if [ -f "$IMAGE_FILE" ]; then
+        echo "Importing Docker image: ${IMAGE_FILE} ..."
+        docker import "$IMAGE_FILE" ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null &
+        pid=$!
+        while ps -p $pid >/dev/null; do
+            echo -n "*"
+            sleep 2
+        done
+        echo ""
+        echo "Image imported: ${IMAGE_NAME}:${IMAGE_TAG}"
+    else
+        echo "[ERROR] Docker image file not found: $IMAGE_FILE"
+        echo "Run scripts/build_docker.sh to build the image first."
+        exit 1
+    fi
 fi
 
-docker run --name podsys-lite --privileged=true -it --network=host -v $PWD/workspace:/workspace ainexus-lite:v1.0 /bin/bash
+# ---- 启动容器 ----
+echo ""
+echo "Starting Podsys Lite container..."
+echo "  Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+echo "  Network: host"
+echo "  Workspace: $PWD/workspace -> /workspace"
+echo ""
 
+docker run \
+    --name podsys-lite \
+    --privileged=true \
+    -it \
+    --network=host \
+    -v "$PWD/workspace:/workspace" \
+    -v "$PWD/ipxe:/tftp/ipxe" \
+    ${IMAGE_NAME}:${IMAGE_TAG}
+
+# ---- 清理 ----
 sleep 1
-if docker ps -a --format '{{.Image}}' | grep -q "ainexus-lite:v1.0"; then
-    docker stop $(docker ps -a -q --filter ancestor=ainexus-lite:v1.0) >/dev/null
-    docker rm $(docker ps -a -q --filter ancestor=ainexus-lite:v1.0) >/dev/null
-    docker rmi ainexus-lite:v1.0 >/dev/null
+if docker ps -a --format '{{.Image}}' | grep -q "${IMAGE_NAME}:${IMAGE_TAG}"; then
+    docker stop $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
+    docker rm $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
+    docker rmi ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null 2>&1 || true
 fi

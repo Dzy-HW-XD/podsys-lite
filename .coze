@@ -1,0 +1,11 @@
+[project]
+sub_id = "aec90275"
+name = "podsys-lite"
+requires = []
+project_type = ""
+
+[preview]
+preview_enable = "disabled"
+
+[subprojects]
+path = ["."]

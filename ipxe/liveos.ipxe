@@ -1,0 +1,35 @@
+#!ipxe
+# Podsys Lite - LiveOS 网络引导模式
+# 通过网络加载 squashfs 根文件系统到内存运行
+# 适用于 GB300 (aarch64) 平台
+
+set product-name PODsysGBxx
+set server http://192.168.0.183:5001/
+
+echo === Podsys Lite - LiveOS Mode ===
+echo Server: ${server}
+echo Serial: ${serial}
+echo Loading kernel and initrd...
+
+:start
+initrd ${server}liveos/initrd || goto fail
+kernel ${server}liveos/vmlinuz \
+    initrd=initrd \
+    boot=casper \
+    netboot=url \
+    url=${server}liveos/filesystem.squashfs \
+    ip=dhcp \
+    root=/dev/ram0 \
+    ramdisk_size=33554432 \
+    motherboardSN=${serial} \
+    podsyslevel=Basic \
+    cloud-config-url=/dev/null \
+    console=tty0 \
+    net.ifnames=0 \
+    biosdevname=0
+boot || goto fail
+
+:fail
+echo "LiveOS boot failed, retrying in 3 seconds..."
+sleep 3
+goto start

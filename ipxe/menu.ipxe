@@ -1,0 +1,42 @@
+#!ipxe
+# Podsys Lite - 主引导菜单
+# 根据 LiveOS 是否启用，显示不同菜单项
+
+set product-name PODsysGBxx
+
+:start
+imgfetch http://192.168.0.183:5000/receive_ipxecfg?serial=${serial} || echo [WARNING] Failed to send heartbeat
+goto menu
+
+:menu
+menu Podsys Lite Boot Menu
+item --gap --             -------- Boot Options --------
+item install              [1] Auto Install OS
+item liveos               [2] LiveOS (Network Boot)
+item --gap --             -------- Advanced --------
+item shell                [S] iPXE Shell
+item reboot               [R] Reboot
+item exit                 [X] Exit (next boot device)
+choose --default install --timeout 10000 target && goto ${target}
+
+:install
+chain http://192.168.0.183:5001/ipxe/install.ipxe || goto fail
+
+:liveos
+chain http://192.168.0.183:5001/ipxe/liveos.ipxe || goto fail
+
+:shell
+echo Type 'exit' to return to menu
+shell
+goto menu
+
+:reboot
+reboot
+
+:exit
+exit
+
+:fail
+echo Boot failed, retrying in 3 seconds...
+sleep 3
+goto menu
