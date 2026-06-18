@@ -243,53 +243,33 @@ fi
 mkdir -p "$TFTP_ROOT/ipxe"
 cp "$PWD/ipxe/"*.ipxe "$TFTP_ROOT/ipxe/" 2>/dev/null || true
 
-# ---- 重建 grubaa64.efi（内嵌 TFTP 早期配置）----
-# ISO 原始 grubaa64.efi 的 prefix 指向本地磁盘，PXE 启动时找不到 grub.cfg
-# 必须用 grub-mkimage 重建，这个步骤不依赖 ISO 文件
-echo ""
-echo "=== Rebuilding grubaa64.efi with TFTP prefix ==="
-if ! command -v grub-mkimage &>/dev/null || [ ! -f /usr/lib/grub/arm64-efi/moddep.lst ]; then
-    echo "Installing grub-efi-arm64-bin for grub-mkimage..."
-    sudo apt-get update -qq
-    sudo apt-get install -y grub-efi-arm64-bin
-fi
-
-if command -v grub-mkimage &>/dev/null; then
-    EARLY_CFG=$(mktemp)
-    cat > "$EARLY_CFG" <<'EARLYEOF'
+# ---- grubaa64.efi 处理 ----
+# 优先使用 Docker 镜像中预构建的 grubaa64.efi（内嵌 TFTP 前缀）
+# 如果镜像中没有（旧版镜像），则在宿主机上用 grub-mkimage 构建
+if [ ! -f "$TFTP_ROOT/grubaa64.efi" ]; then
+    echo "[WARNING] grubaa64.efi not found in tftp-root"
+    echo "  Trying to build with grub-mkimage..."
+    if ! command -v grub-mkimage &>/dev/null || [ ! -f /usr/lib/grub/arm64-efi/moddep.lst ]; then
+        echo "  Installing grub-efi-arm64-bin..."
+        sudo apt-get update -qq
+        sudo apt-get install -y grub-efi-arm64-bin
+    fi
+    if command -v grub-mkimage &>/dev/null; then
+        EARLY_CFG=$(mktemp)
+        cat > "$EARLY_CFG" <<'EARLYEOF'
 set root=(tftp)
 set prefix=(tftp)/boot/grub
 configfile ${prefix}/grub.cfg
 EARLYEOF
-
-    GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
-
-    grub-mkimage \
-        -O arm64-efi \
-        -o "$TFTP_ROOT/grubaa64.efi" \
-        -p "(tftp)/boot/grub" \
-        -c "$EARLY_CFG" \
-        $GRUB_MODULES
-
-    rm -f "$EARLY_CFG"
-    echo "[OK] grubaa64.efi rebuilt with TFTP prefix"
-    echo "     prefix=(tftp)/boot/grub"
-    echo "     early config embedded"
-else
-    echo "[ERROR] grub-mkimage not available!"
-    echo "  Install grub-efi-arm64-bin manually: sudo apt install grub-efi-arm64-bin"
-    echo "  PXE boot will NOT work without rebuilt grubaa64.efi"
-    # 尝试从 ISO 提取作为降级
-    if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
-        ISO_MOUNT="/tmp/podsys-iso-mount"
-        mkdir -p "$ISO_MOUNT"
-        sudo mount -o loop,ro "$PWD/workspace/$ISO_NAME" "$ISO_MOUNT" 2>/dev/null || true
-        if mountpoint -q "$ISO_MOUNT"; then
-            [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
-            sudo umount "$ISO_MOUNT" 2>/dev/null || true
-            echo "[WARNING] Using ISO original grubaa64.efi (may not work with PXE)"
-        fi
+        GRUB_MODULES="normal configfile tftp efinet net linux search echo boot gzio xzio gettext ls test true false part_gpt fat ext2"
+        grub-mkimage -O arm64-efi -o "$TFTP_ROOT/grubaa64.efi" -p "(tftp)/boot/grub" -c "$EARLY_CFG" $GRUB_MODULES
+        rm -f "$EARLY_CFG"
+        echo "[OK] grubaa64.efi built on host"
+    else
+        echo "[ERROR] Cannot build grubaa64.efi! PXE boot will not work."
     fi
+else
+    echo "[OK] grubaa64.efi ready (from Docker image or previous build)"
 fi
 
 # 从 ISO 提取 casper 内核/initrd 到 TFTP（仅安装模式需要）
