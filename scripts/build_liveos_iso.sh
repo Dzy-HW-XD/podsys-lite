@@ -77,6 +77,25 @@ echo "Podsys LiveOS - Custom Image" > "$ISO_DIR/.disk/info"
 # 创建 .disk/cd_type
 echo "complete" > "$ISO_DIR/.disk/cd_type"
 
+# 创建 .disk/casper-uuid（casper 用于 UUID 校验）
+# 注意：如果引导参数中添加了 ignore_uuid，则此文件不是必须的。
+# 但为了兼容性，建议保留。UUID 应与源 Ubuntu ISO 的 initrd 中
+# /conf/uuid.conf 的值一致，可通过以下命令获取：
+#   mkdir -p /tmp/initrd-check && cd /tmp/initrd-check
+#   zstdcat /path/to/initrd > initrd-full.cpio 2>/dev/null || lz4 -d < /path/to/initrd > initrd-full.cpio
+#   cpio -id < initrd-full.cpio 2>/dev/null
+#   cat conf/uuid.conf
+CASPER_UUID="${CASPER_UUID:-}"
+if [ -n "$CASPER_UUID" ]; then
+    echo "$CASPER_UUID" > "$ISO_DIR/.disk/casper-uuid"
+    echo "[INFO] .disk/casper-uuid set to: $CASPER_UUID"
+else
+    # 生成一个随机 UUID 作为后备（配合 ignore_uuid 引导参数使用）
+    uuidgen > "$ISO_DIR/.disk/casper-uuid"
+    echo "[WARN] .disk/casper-uuid generated randomly (not matching source ISO UUID)"
+    echo "       Make sure to add 'ignore_uuid' to kernel boot parameters"
+fi
+
 # ---- 创建输出目录 ----
 mkdir -p "$(dirname "$OUTPUT_ISO")"
 
