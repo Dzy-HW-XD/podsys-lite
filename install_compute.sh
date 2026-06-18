@@ -153,7 +153,7 @@ fi
 
 # ---- TFTP 根目录初始化 ----
 TFTP_ROOT="$PWD/tftp-root"
-mkdir -p "$TFTP_ROOT"
+mkdir -p "$TFTP_ROOT/casper"
 
 # 生成 autoexec.ipxe（iPXE 加载后的默认入口）
 cat > "$TFTP_ROOT/autoexec.ipxe" <<AUTOEOF
@@ -161,8 +161,44 @@ cat > "$TFTP_ROOT/autoexec.ipxe" <<AUTOEOF
 chain http://${manager_ip}:5001/ipxe/menu.ipxe
 AUTOEOF
 
-# 复制 ARM64 iPXE 到 TFTP 根目录
-[ -f "$PWD/ipxe/ipxe-arm64.efi" ] && cp "$PWD/ipxe/ipxe-arm64.efi" "$TFTP_ROOT/"
+# 生成 GRUB 配置（ARM64 GB300 用 GRUB 引导替代崩溃的 iPXE）
+ISO_NAME=$(grep "iso" "$CONFIG_FILE" | cut -d ":" -f 2 | tr -d '[:space:]')
+cat > "$TFTP_ROOT/grub.cfg" <<GRUBEOF
+set default=0
+set timeout=5
+
+menuentry "LiveOS (Network Boot)" {
+    linux /ipxe/liveos-vmlinuz boot=casper netboot=url url=http://${manager_ip}:5001/liveos/filesystem.squashfs ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
+    initrd /ipxe/liveos-initrd
+}
+
+menuentry "Auto Install OS" {
+    linux /casper/vmlinuz ip=dhcp url=http://${manager_ip}:5001/workspace/${ISO_NAME} autoinstall ds=nocloud-net;s=http://${manager_ip}:5001/user-data/ root=/dev/ram0 cloud-config-url=/dev/null
+    initrd /casper/initrd
+}
+
+menuentry "Reboot" {
+    reboot
+}
+GRUBEOF
+
+# 复制 LiveOS vmlinuz/initrd 到 TFTP（GRUB 通过 TFTP 加载）
+[ -f "$PWD/workspace/liveos/vmlinuz" ] && cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/ipxe/liveos-vmlinuz"
+[ -f "$PWD/workspace/liveos/initrd" ] && cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/ipxe/liveos-initrd"
+
+# 从 ISO 提取 casper 内核/initrd 到 TFTP（安装模式用）
+if [ -n "$ISO_NAME" ] && [ -f "$PWD/workspace/$ISO_NAME" ]; then
+    ISO_MOUNT="/tmp/podsys-iso-mount"
+    mkdir -p "$ISO_MOUNT"
+    sudo mount -o loop,ro "$PWD/workspace/$ISO_NAME" "$ISO_MOUNT" 2>/dev/null || true
+    if mountpoint -q "$ISO_MOUNT"; then
+        cp "$ISO_MOUNT/casper/vmlinuz" "$TFTP_ROOT/casper/" 2>/dev/null || true
+        cp "$ISO_MOUNT/casper/initrd" "$TFTP_ROOT/casper/" 2>/dev/null || true
+        # 提取 grubaa64.efi
+        [ -f "$ISO_MOUNT/efi/boot/grubaa64.efi" ] && cp "$ISO_MOUNT/efi/boot/grubaa64.efi" "$TFTP_ROOT/"
+        sudo umount "$ISO_MOUNT" 2>/dev/null || true
+    fi
+fi
 
 # ---- 启动容器 ----
 echo ""

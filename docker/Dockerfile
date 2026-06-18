@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 LABEL maintainer="podsys-lite"
-LABEL description="Podsys Lite - iPXE network boot system with LiveOS support"
+LABEL description="Podsys Lite - Network boot system with LiveOS support for GB300"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,15 +22,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 目录结构
-RUN mkdir -p /tftp/ipxe /workspace /var/log/podsys
+RUN mkdir -p /tftp/ipxe /tftp/casper /workspace /var/log/podsys
 
-# --- iPXE 引导文件（从 ipxe 包复制 x86 版本） ---
+# --- x86 iPXE 引导文件（从 ipxe 包复制） ---
 RUN cp /usr/lib/ipxe/undionly.kpxe      /tftp/undionly.kpxe 2>/dev/null || true && \
     cp /usr/lib/ipxe/ipxe.efi            /tftp/ipxe.efi 2>/dev/null || true && \
     cp /usr/lib/ipxe/snponly.efi         /tftp/snponly.efi 2>/dev/null || true
 
 # --- iPXE 引导菜单脚本 ---
 COPY ipxe/ /tftp/ipxe/
+
+# --- ARM64 GRUB 引导器（从 ISO 提取 grubaa64.efi 放入 tftp-grub/） ---
+# 注意：grubaa64.efi 和 grub.cfg 不打进镜像，通过 tftp-root 挂载提供
+# 这样可以在不重建镜像的情况下更新配置
 
 # --- dnsmasq 配置 ---
 COPY docker/dnsmasq.conf /etc/dnsmasq.conf
@@ -47,10 +51,6 @@ RUN chmod +x /entrypoint.sh
 # --- 辅助脚本 ---
 COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
-
-# 注意：ARM64 iPXE (ipxe-arm64.efi) 和 autoexec.ipxe 
-# 不打进镜像，通过 -v tftp-root:/tftp 挂载提供
-# 这样可以在不重建镜像的情况下更新这些文件
 
 EXPOSE 67/udp 69/udp 5001
 
