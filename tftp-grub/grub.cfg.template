@@ -2,8 +2,8 @@ set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /ipxe/liveos-vmlinuz boot=casper netboot=url url=http://MANAGER_IP:5001/liveos/filesystem.squashfs ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
-    initrd /ipxe/liveos-initrd
+    linux /liveos-vmlinuz boot=casper netboot=url url=http://MANAGER_IP:5001/liveos/filesystem.squashfs ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
+    initrd /liveos-initrd
 }
 
 menuentry "Auto Install OS" {

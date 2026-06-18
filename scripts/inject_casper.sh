@@ -151,7 +151,7 @@ cp "$INITRD_PATH" "$BACKUP"
 echo "  Backup: $BACKUP"
 
 # 使用与原格式一致的压缩方式重新打包
-find . | cpio -o -H newc 2>/dev/null | zstd -T0 -o "$INITRD_PATH"
+find . | cpio -o -H newc 2>/dev/null | zstd -T0 > "$INITRD_PATH"
 
 echo ""
 echo "============================================"
