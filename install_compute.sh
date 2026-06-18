@@ -173,7 +173,7 @@ set default=0
 set timeout=5
 
 menuentry "LiveOS (Network Boot)" {
-    linux /liveos-vmlinuz boot=casper netboot=url url=http://${manager_ip}:5001/liveos/ ip=dhcp root=/dev/ram0 ramdisk_size=33554432 console=tty0 net.ifnames=0 biosdevname=0
+    linux /liveos-vmlinuz boot=casper url=http://${manager_ip}:5001/liveos/ ip=dhcp console=tty0 net.ifnames=0 biosdevname=0
     initrd /liveos-initrd
 }
 
@@ -193,51 +193,36 @@ echo "$GRUB_CFG_CONTENT" > "$TFTP_ROOT/boot/grub/grub.cfg"
 echo "$GRUB_CFG_CONTENT" > "$TFTP_ROOT/grub.cfg"
 echo "[OK] grub.cfg written to /boot/grub/ and TFTP root"
 
-# 复制 LiveOS vmlinuz/initrd 到 TFTP 根目录（GRUB 通过 TFTP 加载）
-[ -f "$PWD/workspace/liveos/vmlinuz" ] && { cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz"; chmod 755 "$TFTP_ROOT/liveos-vmlinuz"; }
-[ -f "$PWD/workspace/liveos/initrd" ] && { cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/liveos-initrd"; chmod 755 "$TFTP_ROOT/liveos-initrd"; }
-
-# ---- LiveOS initrd casper 注入检查 ----
-# 黄金机的 initrd 不含 casper 模块，boot=casper 会失败
-# 如果尚未注入，自动执行注入
-if [ "$liveos_enable" = "yes" ] || [ "$liveos_enable" = "true" ]; then
-    LIVEOS_INITRD="$PWD/workspace/liveos/initrd"
-    if [ -f "$LIVEOS_INITRD" ]; then
-        echo ""
-        echo "=== Checking casper module in LiveOS initrd ==="
-        HAS_CASPER=false
-        if command -v lsinitramfs &>/dev/null; then
-            if lsinitramfs "$LIVEOS_INITRD" 2>/dev/null | grep -q 'casper'; then
-                HAS_CASPER=true
-            fi
-        fi
-        # 备用检测：直接搜索 casper 关键字
-        if [ "$HAS_CASPER" = "false" ]; then
-            if file "$LIVEOS_INITRD" | grep -q "cpio\|gzip\|zstd\|XZ"; then
-                # 创建临时目录检查
-                _CHECK_DIR=$(mktemp -d /tmp/casper-check-XXXXXX)
-                cd "$_CHECK_DIR"
-                if zstd -d -c "$LIVEOS_INITRD" 2>/dev/null | cpio -t 2>/dev/null | grep -q 'casper'; then
-                    HAS_CASPER=true
-                elif zcat "$LIVEOS_INITRD" 2>/dev/null | cpio -t 2>/dev/null | grep -q 'casper'; then
-                    HAS_CASPER=true
-                fi
-                cd -
-                rm -rf "$_CHECK_DIR"
-            fi
-        fi
-
-        if [ "$HAS_CASPER" = "true" ]; then
-            echo "[OK] casper module already present in initrd"
-        else
-            echo "[WARNING] casper module NOT found in initrd"
-            echo "  Running casper injection..."
-            bash "$PWD/scripts/inject_casper.sh" "$LIVEOS_INITRD"
-            # 注入后重新复制 initrd 到 TFTP
-            cp "$LIVEOS_INITRD" "$TFTP_ROOT/liveos-initrd"
-            echo "[OK] casper injected and initrd updated in TFTP"
-        fi
+# LiveOS vmlinuz/initrd 从 ISO 提取（ISO 的 initrd 自带 casper 网络模块）
+# 黄金机的 initrd 不支持网络拉取 squashfs，不能用于 LiveOS
+ISO_MOUNT_LIVEOS="/tmp/podsys-iso-liveos"
+ISO_FILE_LIVEOS=""
+# 查找 ISO 文件
+for iso_candidate in "$PWD/workspace/iso/"*.iso "$PWD/workspace/"*.iso; do
+    if [ -f "$iso_candidate" ]; then
+        ISO_FILE_LIVEOS="$iso_candidate"
+        break
     fi
+done
+if [ -n "$ISO_FILE_LIVEOS" ]; then
+    mkdir -p "$ISO_MOUNT_LIVEOS"
+    sudo mount -o loop,ro "$ISO_FILE_LIVEOS" "$ISO_MOUNT_LIVEOS" 2>/dev/null || true
+    if mountpoint -q "$ISO_MOUNT_LIVEOS"; then
+        cp "$ISO_MOUNT_LIVEOS/casper/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz" 2>/dev/null || true
+        cp "$ISO_MOUNT_LIVEOS/casper/initrd" "$TFTP_ROOT/liveos-initrd" 2>/dev/null || true
+        chmod 755 "$TFTP_ROOT/liveos-vmlinuz" "$TFTP_ROOT/liveos-initrd"
+        sudo umount "$ISO_MOUNT_LIVEOS" 2>/dev/null || true
+        echo "[OK] LiveOS vmlinuz/initrd extracted from ISO (with casper network support)"
+    else
+        echo "[WARNING] Could not mount ISO for LiveOS, trying workspace/liveos/ as fallback"
+        [ -f "$PWD/workspace/liveos/vmlinuz" ] && { cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz"; chmod 755 "$TFTP_ROOT/liveos-vmlinuz"; }
+        [ -f "$PWD/workspace/liveos/initrd" ] && { cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/liveos-initrd"; chmod 755 "$TFTP_ROOT/liveos-initrd"; }
+    fi
+    rmdir "$ISO_MOUNT_LIVEOS" 2>/dev/null || true
+else
+    echo "[WARNING] No ISO found, using workspace/liveos/ vmlinuz/initrd (may lack casper)"
+    [ -f "$PWD/workspace/liveos/vmlinuz" ] && { cp "$PWD/workspace/liveos/vmlinuz" "$TFTP_ROOT/liveos-vmlinuz"; chmod 755 "$TFTP_ROOT/liveos-vmlinuz"; }
+    [ -f "$PWD/workspace/liveos/initrd" ] && { cp "$PWD/workspace/liveos/initrd" "$TFTP_ROOT/liveos-initrd"; chmod 755 "$TFTP_ROOT/liveos-initrd"; }
 fi
 
 # 复制 iPXE 脚本到 TFTP（备用，GRUB 不需要但 nginx 可通过 /tftp/ 路径提供）

@@ -7,11 +7,14 @@
 # 用法:
 #   bash prepare_liveos.sh [输出目录]
 #
+# 说明:
+#   本脚本只打包 filesystem.squashfs。
+#   vmlinuz 和 initrd 从 Ubuntu ISO 获取（自带 casper 网络模块），
+#   黄金机的 initrd 不支持网络拉取 squashfs，不能用于 LiveOS。
+#
 # 默认输出:
 #   /home/nexus/podsys-liveos/
-#     vmlinuz              - ARM64 内核
-#     initrd               - 原始 initramfs（可能缺少 casper）
-#     filesystem.squashfs  - 根文件系统压缩镜像
+#     filesystem.squashfs  - 根文件系统压缩镜像（黄金机完整环境）
 # ============================================================
 set -e
 
@@ -38,7 +41,7 @@ fi
 
 # ---- 检查必要工具（不安装，只检查） ----
 echo ""
-echo "[1/3] Checking tools..."
+echo "[1/2] Checking tools..."
 MISSING_TOOLS=""
 for tool in mksquashfs; do
     if ! command -v $tool &>/dev/null; then
@@ -54,32 +57,17 @@ echo "  [OK] All tools available"
 
 # ---- 检查关键驱动（只读） ----
 echo ""
-echo "[2/3] Checking drivers..."
+echo ""
+echo "[2/2] Checking drivers..."
 if lsmod | grep -q igb; then
     echo "  [OK] igb driver loaded (I210)"
 else
     echo "  [WARNING] igb driver not loaded"
 fi
 
-# 检查 initrd 中是否已有 casper
-CURRENT_KERNEL=$(uname -r)
-INITRD_PATH="/boot/initrd.img-${CURRENT_KERNEL}"
-if command -v lsinitramfs &>/dev/null; then
-    if lsinitramfs "$INITRD_PATH" 2>/dev/null | grep -q 'casper'; then
-        echo "  [OK] casper found in initrd"
-    else
-        echo "  [WARNING] casper NOT found in initrd"
-        echo "  -> After copying to management node, run:"
-        echo "     bash scripts/inject_casper.sh workspace/liveos/initrd"
-    fi
-else
-    echo "  [INFO] Cannot check initrd contents (lsinitramfs not available)"
-    echo "  -> If LiveOS boot fails, initrd may need casper injection"
-fi
-
 # ---- 制作 squashfs（只读） ----
 echo ""
-echo "[3/3] Creating squashfs (this may take 10-30 minutes)..."
+echo "Creating squashfs (this may take 10-30 minutes)..."
 echo "  Compressing root filesystem (read-only, no system changes)..."
 
 cat > /tmp/podsys-exclude.txt << 'EXCLUDE_EOF'
@@ -112,32 +100,21 @@ mksquashfs / "$OUTPUT_DIR/filesystem.squashfs" \
 
 echo "  [OK] squashfs: $(du -h "$OUTPUT_DIR/filesystem.squashfs" | cut -f1)"
 
-# ---- 复制内核和 initrd（只读） ----
-echo ""
-echo "Copying kernel and initrd..."
-cp /boot/vmlinuz-"$CURRENT_KERNEL" "$OUTPUT_DIR/vmlinuz"
-cp "$INITRD_PATH" "$OUTPUT_DIR/initrd"
-
-echo "  [OK] vmlinuz ($(du -h "$OUTPUT_DIR/vmlinuz" | cut -f1))"
-echo "  [OK] initrd  ($(du -h "$OUTPUT_DIR/initrd" | cut -f1))"
-
 # ---- 完成 ----
 echo ""
 echo "============================================"
 echo "  LiveOS preparation complete!"
 echo "============================================"
 echo ""
-echo "Output files:"
-echo "  $OUTPUT_DIR/vmlinuz"
-echo "  $OUTPUT_DIR/initrd"
+echo "Output file:"
 echo "  $OUTPUT_DIR/filesystem.squashfs"
 echo ""
 echo "Next steps:"
-echo "  1. Copy to management node:"
-echo "     scp $OUTPUT_DIR/{vmlinuz,initrd,filesystem.squashfs} root@<manager>:/root/podsys-lite/workspace/liveos/"
+echo "  1. Copy squashfs to management node:"
+echo "     scp $OUTPUT_DIR/filesystem.squashfs root@<manager>:/root/podsys-lite/workspace/liveos/"
 echo ""
-echo "  2. If initrd lacks casper, inject it on management node:"
-echo "     bash scripts/inject_casper.sh workspace/liveos/initrd"
+echo "  2. vmlinuz and initrd come from Ubuntu ISO (not golden machine):"
+echo "     install_compute.sh will extract them from the ISO automatically"
 echo ""
 echo "  3. Start Podsys Lite:"
 echo "     bash install_compute.sh"

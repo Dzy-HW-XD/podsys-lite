@@ -26,7 +26,3 @@ iso: ubuntu-24.04.4-live-server-arm64.iso
 # ========== LiveOS 配置 ==========
 # 是否启用 LiveOS 模式: yes / no
 liveos_enable: yes
-
-# LiveOS squashfs 内存盘大小（单位: KB）
-# GB300 内存充裕，建议 32GB (33554432 KB)
-liveos_ramdisk_size: 33554432
