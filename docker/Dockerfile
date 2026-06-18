@@ -22,10 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 目录结构
-RUN mkdir -p /tftp /workspace /var/log/podsys
+RUN mkdir -p /tftp/ipxe /workspace /var/log/podsys
 
-# --- iPXE 引导文件 ---
-# 从 ipxe 包复制 EFI 和 BIOS 版本到 TFTP 根
+# --- iPXE 引导文件（从 ipxe 包复制 x86 版本） ---
 RUN cp /usr/lib/ipxe/undionly.kpxe      /tftp/undionly.kpxe 2>/dev/null || true && \
     cp /usr/lib/ipxe/ipxe.efi            /tftp/ipxe.efi 2>/dev/null || true && \
     cp /usr/lib/ipxe/snponly.efi         /tftp/snponly.efi 2>/dev/null || true
@@ -48,6 +47,10 @@ RUN chmod +x /entrypoint.sh
 # --- 辅助脚本 ---
 COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
+
+# 注意：ARM64 iPXE (ipxe-arm64.efi) 和 autoexec.ipxe 
+# 不打进镜像，通过 -v tftp-root:/tftp 挂载提供
+# 这样可以在不重建镜像的情况下更新这些文件
 
 EXPOSE 67/udp 69/udp 5001
 

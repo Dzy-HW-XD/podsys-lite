@@ -133,8 +133,12 @@ if type uname >/dev/null 2>&1; then
     IMAGE_TAR="${IMAGE_FILE}.tar"
     if [ -f "$IMAGE_TAR" ]; then
         echo "Loading Docker image: ${IMAGE_TAR} ..."
-        docker load -i "$IMAGE_TAR" 2>&1
-        echo "Image loaded: ${IMAGE_NAME}:${IMAGE_TAG}"
+        LOADED_IMAGE=$(docker load -i "$IMAGE_TAR" 2>&1 | tail -1 | sed 's/Loaded image: //')
+        echo "Image loaded: ${LOADED_IMAGE}"
+        # 确保 tag 一致
+        if [ "$LOADED_IMAGE" != "${IMAGE_NAME}:${IMAGE_TAG}" ]; then
+            docker tag "$LOADED_IMAGE" ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
+        fi
     elif [ -f "$IMAGE_FILE" ]; then
         # 兼容旧版扁平格式
         echo "Importing Docker image (legacy): ${IMAGE_FILE} ..."
@@ -147,27 +151,44 @@ if type uname >/dev/null 2>&1; then
     fi
 fi
 
+# ---- TFTP 根目录初始化 ----
+TFTP_ROOT="$PWD/tftp-root"
+mkdir -p "$TFTP_ROOT"
+
+# 生成 autoexec.ipxe（iPXE 加载后的默认入口）
+cat > "$TFTP_ROOT/autoexec.ipxe" <<AUTOEOF
+#!ipxe
+chain http://${manager_ip}:5001/ipxe/menu.ipxe
+AUTOEOF
+
+# 复制 ARM64 iPXE 到 TFTP 根目录
+[ -f "$PWD/ipxe/ipxe-arm64.efi" ] && cp "$PWD/ipxe/ipxe-arm64.efi" "$TFTP_ROOT/"
+
 # ---- 启动容器 ----
 echo ""
 echo "Starting Podsys Lite container..."
 echo "  Image: ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  Network: host"
 echo "  Workspace: $PWD/workspace -> /workspace"
+echo "  TFTP root: $TFTP_ROOT -> /tftp"
 echo ""
 
 docker run \
     --name podsys-lite \
     --privileged=true \
-    -it \
+    -d \
     --network=host \
     -v "$PWD/workspace:/workspace" \
     -v "$PWD/ipxe:/tftp/ipxe" \
+    -v "$TFTP_ROOT:/tftp" \
     ${IMAGE_NAME}:${IMAGE_TAG}
 
-# ---- 清理 ----
-sleep 1
-if docker ps -a --format '{{.Image}}' | grep -q "${IMAGE_NAME}:${IMAGE_TAG}"; then
-    docker stop $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
-    docker rm $(docker ps -a -q --filter ancestor=${IMAGE_NAME}:${IMAGE_TAG}) >/dev/null 2>&1 || true
-    docker rmi ${IMAGE_NAME}:${IMAGE_TAG} >/dev/null 2>&1 || true
+# ---- 验证 ----
+sleep 2
+if docker ps --format '{{.Names}}' | grep -q 'podsys-lite'; then
+    echo "Container podsys-lite is running."
+    echo "Use 'docker logs -f podsys-lite' to monitor."
+else
+    echo "[ERROR] Container failed to start. Check 'docker logs podsys-lite'."
+    exit 1
 fi
